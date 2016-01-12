@@ -1,0 +1,415 @@
+<!doctype html>
+<html lang="en">
+<head>
+	<title>Canvas experiments</title>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+    
+    <script src="//ajax.googleapis.com/ajax/libs/jquery/1.10.2/jquery.min.js"></script>
+    <script src="js/paper-full.min.js"></script>
+    <script src="js/fpsmeter.min.js"></script>
+    <script>
+/**
+ * Request Animation Frame Polyfill.
+ * @author Tino Zijdel
+ * @author Paul Irish
+ * @see https://gist.github.com/paulirish/1579671
+ */
+;(function() {
+
+  var lastTime = 0;
+  var vendors = ['ms', 'moz', 'webkit', 'o'];
+
+  for(var x = 0; x < vendors.length && !window.requestAnimationFrame; ++x) {
+    window.requestAnimationFrame = window[vendors[x]+'RequestAnimationFrame'];
+    window.cancelAnimationFrame = window[vendors[x]+'CancelAnimationFrame'] || window[vendors[x]+'CancelRequestAnimationFrame'];
+  }
+
+  if (!window.requestAnimationFrame) {
+    window.requestAnimationFrame = function(callback, element) {
+      var currTime = new Date().getTime();
+      var timeToCall = Math.max(0, 16 - (currTime - lastTime));
+      var id = window.setTimeout(function() { callback(currTime + timeToCall); },
+        timeToCall);
+      lastTime = currTime + timeToCall;
+      return id;
+    };
+  }
+
+  if (!window.cancelAnimationFrame) {
+    window.cancelAnimationFrame = function(id) {
+      clearTimeout(id);
+    };
+  }
+
+}());
+    </script>
+
+    <style>
+body{
+    width: 100%;
+    height: 100%;
+    background: rgb(77, 202, 187);
+    padding: 0;
+    margin: 0;
+}
+
+#scene{
+    width: 100%;
+    height: 100%;
+    background: #000;
+}
+
+nav{
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    width: 100%;
+    margin: 0 auto;
+    text-align: center;    
+}
+
+nav > a{
+    display: inline-block;
+    width: 64px;
+    height: 64px;
+    background: rgb(255, 255, 255);
+    line-height: 64px;
+    color: rgb(0, 0, 0);
+    text-decoration: none;
+    border: 1px solid rgb(255, 255, 255);
+    font-family: sans-serif;  
+    
+    transition:all .3s linear; 
+    -o-transition:all .3s linear; 
+    -moz-transition:all .3s linear; 
+    -webkit-transition:all .3s linear;  
+}
+
+nav > a.active{
+    background: rgba(0, 0, 0, 0) !important;
+    color: rgb(255, 255, 255);
+}
+
+nav > a:hover{
+    background: rgba(255, 255, 255, .5);
+    color: rgb(255, 255, 255);    
+}
+
+    </style>
+</head>
+<body>
+
+<nav>
+    <a class="js__change-scene active" href="#">1</a>
+    <a class="js__change-scene" href="#">2</a>
+    <a class="js__change-scene" href="#">3</a>
+    <a class="js__change-scene" href="#">4</a>
+    <a class="js__change-scene" href="#">5</a>
+</nav>
+
+<canvas id="scene"></canvas>
+
+<script>
+var App = (function(){
+    "use strict";
+
+    var _public = {};
+    
+    var meter = new FPSMeter(document.body);
+    
+    var particleCount = 128
+    ,   particleFigureCount = 128
+    ,   particles = []
+    ,   particleFigure = []
+    ,   particleFigurePosition = []
+    ,   W
+    ,   H
+    ,   canvas
+    ,   ctx
+    ,   figurePath = []
+    ,   particleAll = []
+    ;
+    
+    function Particle() {
+    	this.x = Math.random() * W;
+    	this.y = Math.random() * H;
+
+    	this.vx = -1 + Math.random() * 2;
+    	this.vy = -1 + Math.random() * 2;
+        
+        this.tx = Math.random() * W;
+        this.ty = Math.random() * H;
+
+    	this.radius = 4;
+        
+        this.minDist = 100;
+    	
+    	this.draw = function() {
+    		ctx.fillStyle = '#fff';
+    		ctx.beginPath();
+    		ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2, false);
+    		ctx.fill();
+    	}
+    }    
+    
+    function ParticleFigure() {
+    	this.x = Math.random() * W;
+    	this.y = Math.random() * H;
+
+    	this.vx = Math.random() * 2;
+    	this.vy = Math.random() * 2;
+        
+        this.tx = Math.random() * W;
+        this.ty = Math.random() * H;
+
+    	this.radius = 4;
+        
+        this.minDist = 50;
+    	
+    	this.draw = function() {
+    		ctx.fillStyle = '#fff';
+    		ctx.beginPath();
+    		ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2, false);
+    		ctx.fill();
+    	}
+    }  
+    
+    function getFigurePoints(figure){
+        var target = [];
+        var pathCount = figure.length;
+        var figureLength = 0;
+        figure.forEach(function(path){ figureLength += path.length; });
+        
+        figure.forEach(function(path){
+            var particlePathCount = (((path.length*100)/figureLength)/100)*particleFigureCount;
+            
+            for(var i = 0; i < particlePathCount; i++){
+                var length = (i % particlePathCount) / particlePathCount * path.length;
+                target.push({
+                    x: path.getPointAt(length).x + W/2 - particleFigureCount*2,
+                    y: path.getPointAt(length).y + H/2 - particleFigureCount*2
+                });         
+            }
+        });
+        
+        return target;
+    }
+    
+    function updateTarget(particle, target){
+        for(var i = 0; i < particle.length; i++) {
+            particle[i].tx = target[i].x;
+            particle[i].ty = target[i].y;
+        }
+    }
+    
+    function drawParticle(){
+    	for (var i = 0; i < particles.length; i++) {
+            var p = particles[i];
+            p.draw();
+            p.x += p.vx;
+            p.y += p.vy;
+            
+            if(p.x + p.radius > W){ 
+    			p.x = p.radius;
+    		}else if(p.x - p.radius < 0) {
+    			p.x = W - p.radius;
+    		}
+    		
+    		if(p.y + p.radius > H){ 
+    			p.y = p.radius;
+    		}else if(p.y - p.radius < 0) {
+    			p.y = H - p.radius;
+    		}
+    	}
+    }
+
+    function drawParticleFigure(){
+        for (var i = 0; i < particleFigure.length; i++) {
+            var p = particleFigure[i];
+            p.draw();
+            p.x += (p.tx - p.x) / (p.vx * 10);
+            p.y += (p.ty - p.y) / (p.vy * 10);
+    	}
+    }
+    
+    function drawConnections(particle){
+        var particleLength = particle.length;
+
+        for(var i = 0; i < particleLength; i++){
+            for(var j = i + 1; j < particleLength; j++){
+                var dist = distance(particle[i], particle[j]);
+                                                        
+                if(dist <= particle[i].minDist){
+                    ctx.beginPath();
+            		ctx.strokeStyle = 'rgba(255, 255, 255, '+parseFloat(1-dist/particle[i].minDist)+')';
+            		ctx.moveTo(particle[i].x, particle[i].y);
+            		ctx.lineTo(particle[j].x, particle[j].y);
+            		ctx.stroke();
+            		ctx.closePath();                     
+                } 
+            }
+        }                
+    }
+    
+    function paintCanvas(){
+    	ctx.fillStyle = "rgba(0,0,0,1)";
+    	ctx.fillRect(0,0,W,H);
+    }
+
+    function init(){
+        paper.setup('scene');
+        
+        canvas = document.getElementById("scene");
+        ctx = canvas.getContext("2d");
+        
+        W = window.innerWidth; 
+        H = window.innerHeight;
+        canvas.width = W;
+        canvas.height = H;
+
+        //rocket
+        figurePath.push([
+            new Path('M251.464,345.998l-85.294-85.295c32.542-98.504,127.049-222.775,294.612-209.76 C474.934,218.625,353.329,310.238,251.464,345.998z'),
+            new Path('M142.36,238.132c6.243-19.771,24.46-57.118,39.448-79.173c-42.708-3.475-103.449,28.635-131.72,83.711 C77.625,221.955,107.115,215.984,142.36,238.132z'),
+            new Path('M269.418,462c55.073-28.27,87.182-89.014,83.71-131.721c-22.056,14.988-59.403,33.205-79.173,39.447 C296.102,404.973,290.133,434.461,269.418,462z'),
+            new Path('M221.334,359.652c-24.438,45.25-71.34,78.444-140.329,68.244c-9.615-65.026,24.423-112.088,72.212-136.361l14.76,14.762 c-52.904,24.277-56.354,68.723-52.805,87.521c19.368,3.604,67.054,1.285,91.55-48.776L221.334,359.652z'),
+            new Path('M311.134,233.413c8.964-8.964,8.964-23.497,0-32.461 c-8.965-8.962-23.496-8.962-32.461,0.004c-8.962,8.962-8.964,23.494,0,32.457C287.637,242.377,302.17,242.377,311.134,233.413z'),
+            new Path('M385.043,180.601c7.396-7.394,11.094-17.087,11.094-26.78 c0.001-9.693-3.696-19.386-11.092-26.78s-17.088-11.092-26.781-11.092c-9.692,0-19.385,3.697-26.78,11.092 c-7.396,7.396-11.093,17.088-11.093,26.78c0,9.693,3.698,19.385,11.093,26.781c7.396,7.395,17.088,11.092,26.78,11.092 C367.956,191.693,377.649,187.996,385.043,180.601z')
+        ]);
+
+        //batman
+        figurePath.push([
+            new Path('M422.526,8.5l-83.992,101.817c-23.053-13.124-50.621-19.662-78.912-19.662c-28.492,0-55.245,6.634-78.406,19.965L99.008,8.5 L98.95,264.256c-0.413,6.682,0,13.489,0,20.574c0,97.853,39.925,181.832,97.045,217.979c-32.169-41.475-60.02-86.493-47.117-130.216 c73.937-2.977,81.752-3.369,81.752-3.369l26.114,21.285l32.117-21.285c53.774,0.383,79.155,1.497,79.155,1.497 c3.332,27.401-1.432,87.493-47.404,132.569c57.5-35.907,98.217-120.185,98.217-218.449c0-6.884-0.303-13.536-0.303-20.037 L422.526,8.5z'),
+            new Path('M223.42,296.908c-7.719,3.092-25.005,13.278-33.037,15.746 c-8.031,2.477-19.14,4.013-23.464,0c-4.325-4.014-18.223-17.291-20.998-20.373c-2.779-3.101-4.632-27.804,11.732-26.557 c16.667,1.259,61.753,19.759,64.533,20.681C224.966,287.337,231.14,293.817,223.42,296.908z'),
+            new Path('M370.963,292.281c-2.772,3.082-16.674,16.359-20.991,20.373 c-4.335,4.013-15.433,2.477-23.463,0c-8.028-2.468-25.318-12.655-33.038-15.746c-7.728-3.091-1.547-9.571,1.229-10.503 c2.779-0.922,47.865-19.422,64.537-20.681C375.607,264.478,373.753,289.181,370.963,292.281z')
+        ]);
+        
+        //dna
+        figurePath.push([
+            new Path('M175.5,492.834c0,0,116-60.668,88-247.334 C235.5,58.833,364.834,22.167,364.834,22.167'),
+            new Path('M501.857,135.291c0,0-49.762,121.081-238.21,110.338 C75.198,234.886,50.562,367.04,50.562,367.04'),
+            new Path('M64.5,346.5l57.999,57.998L187,469'),
+            new Path('M118.5,282.5l64.501,64.501L241,405'),
+            new Path('M470,161l-52.996-52.995L347.5,38.5'),
+            new Path('M292.5,87.5l68.498,68.498L415,210')
+        ]);
+        
+        //twitter
+        figurePath.push([new Path('M462,128.223c-15.158,6.724-31.449,11.269-48.547,13.31c17.449-10.461,30.854-27.025,37.164-46.764 c-16.333,9.687-34.422,16.721-53.676,20.511c-15.418-16.428-37.386-26.691-61.698-26.691c-54.56,0-94.668,50.916-82.337,103.787 c-70.25-3.524-132.534-37.177-174.223-88.314c-22.142,37.983-11.485,87.691,26.158,112.85c-13.854-0.438-26.891-4.241-38.285-10.574 c-0.917,39.162,27.146,75.781,67.795,83.949c-11.896,3.237-24.926,3.978-38.17,1.447c10.754,33.58,41.972,58.018,78.96,58.699 C139.604,378.282,94.846,390.721,50,385.436c37.406,23.982,81.837,37.977,129.571,37.977c156.932,0,245.595-132.551,240.251-251.435 C436.339,160.061,450.668,145.174,462,128.223z')]);
+        
+        //vk        
+        figurePath.push([new Path('M250.58,399.32h30.242c0,0,9.134-1.007,13.804-6.032 c4.292-4.618,4.155-13.285,4.155-13.285s-0.592-40.579,18.24-46.556c18.57-5.891,42.411,39.221,67.681,56.566 c19.108,13.123,33.631,10.25,33.631,10.25l67.572-0.943c0,0,35.346-2.182,18.584-29.973c-1.371-2.271-9.763-20.558-50.243-58.131 c-42.372-39.327-36.692-32.964,14.346-100.988c31.082-41.428,43.507-66.718,39.623-77.55c-3.699-10.32-26.561-7.593-26.561-7.593 l-76.081,0.472c0,0-5.645-0.769-9.825,1.733c-4.089,2.445-6.713,8.161-6.713,8.161s-12.046,32.056-28.101,59.322 c-33.877,57.524-47.425,60.569-52.963,56.992c-12.885-8.326-9.664-33.441-9.664-51.289c0-55.75,8.456-78.995-16.467-85.011 c-8.269-1.997-14.36-3.317-35.512-3.531c-27.148-0.277-50.121,0.083-63.13,6.456c-8.657,4.24-15.334,13.682-11.264,14.227 c5.03,0.67,16.415,3.073,22.452,11.287c7.798,10.61,7.524,34.428,7.524,34.428s4.481,65.625-10.462,73.776 c-10.254,5.59-24.322-5.824-54.527-58.014c-15.472-26.732-27.157-56.287-27.157-56.287s-2.251-5.521-6.271-8.478 c-4.875-3.581-11.687-4.716-11.687-4.716l-72.299,0.473c0,0-10.851,0.304-14.837,5.022c-3.548,4.201-0.284,12.881-0.284,12.881 s56.599,132.422,120.69,199.155C183.852,403.336,250.58,399.32,250.58,399.32L250.58,399.32z')]);
+        
+        particleFigurePosition = getFigurePoints(figurePath[0]);
+        
+        for(var i = 0; i < particleCount; i++) {
+        	particles.push(new Particle());
+        }
+        
+        for(var i = 0; i < particleFigureCount; i++) {
+        	particleFigure.push(new ParticleFigure());
+            particleFigure[i].tx = particleFigurePosition[i].x;
+            particleFigure[i].ty = particleFigurePosition[i].y;
+        }
+        
+        particleAll = arrMerge(particles, particleFigure);
+
+        animloop();
+        
+        $('body').on('click', '.js__change-scene', function(){
+            $('.js__change-scene').removeClass('active');
+            $(this).addClass('active');    
+            
+            var index = $(this).index('.js__change-scene');
+
+            var targetRandom = [];
+            for(var i = 0; i < particleFigureCount; i++) {
+                targetRandom[i] = {
+                    x: Math.random() * W,
+                    y: Math.random() * H
+                };
+            }
+            
+            updateTarget(particleFigure, targetRandom);
+            
+            setTimeout(function(){
+                particleFigurePosition = getFigurePoints(figurePath[index]);
+                updateTarget(particleFigure, particleFigurePosition);
+            }, 500);
+        });
+    }
+
+    function animloop() {
+        paintCanvas();
+        drawParticle();
+        drawParticleFigure();
+        drawConnections(particleAll);
+        requestAnimationFrame(animloop);
+        meter.tick();
+    }
+
+    function normalize(v){
+        var length = Math.sqrt(v.x * v.x + v.y * v.y);
+        return {x: v.x / length, y: v.y / length};
+    }
+    
+    function distance(p1, p2){
+        var dx = p1.x - p2.x
+        ,   dy = p1.y - p2.y;
+	
+	   return Math.sqrt(dx*dx + dy*dy);
+    }
+    
+    function objMerge(obj1, obj2){
+        var out = {};
+        var i = 0;
+                
+        for(key in obj1){
+            out[i] = obj1[key];
+            i++;
+        }
+                
+        for(var key in obj2){
+            out[i] = obj2[key];
+            i++;
+        }
+                
+        return out;
+    }
+    
+    function arrMerge(a1, a2){
+        var out = [];
+        var i = 0;
+                
+        for(key in a1){
+            out[i] = a1[key];
+            i++;
+        }
+                
+        for(var key in a2){
+            out[i] = a2[key];
+            i++;
+        }
+                
+        return out;
+    }
+    
+    _public.init = init;
+    
+    return _public;
+})();
+
+</script>
+
+<script>
+paper.install(window);
+$(document).ready(function(){
+    $(window).on('load', function(){
+        App.init();
+    });
+});
+</script>
+</body>
+</html>
